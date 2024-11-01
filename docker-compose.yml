@@ -1,0 +1,21 @@
+version: '3.3'
+
+RUN:
+ pip install passlib
+
+services:
+  db:
+    image: postgres:14
+    environment:
+    - POSTGRES_USER=stud
+    - POSTGRES_PASSWORD=stud
+    - PGDATA=/data/postgres
+    - POSTGRES_DB=archdb
+    - DATABASE_URL=postgresql://stud:stud@127.0.0.1:8000/archdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:
