@@ -1,0 +1,51 @@
+version: '3.9'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: app
+    depends_on:
+      - postgres
+      - mongo
+      - redis
+    environment:
+      - DATABASE_URL=postgresql://stud:stud@postgres:5432/archdb
+      - MONGO_URL=mongodb://mongo:27017
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "8000:8000"
+    command: bash -c "python /app/init_mongo.py && uvicorn main:app --host 0.0.0.0 --port 8000"
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: stud
+      POSTGRES_PASSWORD: stud
+      POSTGRES_DB: archdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - /init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+
+  mongo:
+    image: mongo:6
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    command: mongod --bind_ip_all
+
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+  mongo_data:
