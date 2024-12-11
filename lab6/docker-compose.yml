@@ -84,6 +84,21 @@ services:
     ports:
       - "9092:9092"
 
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.4.0
+    container_name: kafka-ui
+    ports:
+      - "8888:8080"
+    environment:
+      KAFKA_CLUSTERS_0_BOOTSTRAP_SERVERS: "kafka:9092"
+      KAFKA_CLUSTERS_0_NAME: "kafka-cluster"
+    depends_on:
+      - kafka
+
+networks:
+  monitoring:
+    driver: bridge
+
 volumes:
   postgres_data:
   mongo_data:

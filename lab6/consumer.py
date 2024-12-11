@@ -1,54 +1,67 @@
-from kafka import KafkaConsumer
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, Column, Integer, String
-import json
-import os
 import time
+import os
+import json
+from kafka import KafkaConsumer
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
-# Конфигурация
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://stud:stud@localhost:5432/archdb")
-KAFKA_BROKER_URL = os.getenv("KAFKA_BROKER_URL", "kafka:9092")
-TOPIC_NAME = "user_creation"
+# Базовая модель SQLAlchemy
+Base = declarative_base()
 
-# PostgreSQL
+# Конфигурация БД
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://stud:stud@db/archdb")
 engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(bind=engine)
 
-# Модель для пользователя
-class User:
-    tablename = "users"
+# Конфигурация Kafka
+TOPIC_NAME = "user_creation"
+KAFKA_BROKER_URL = os.getenv("KAFKA_BROKER_URL", "kafka1:9092")
+
+# Модель пользователя
+class User(Base):
+    __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String)
 
-# Ожидание доступности Kafka
+# Создание таблиц, если их нет
+Base.metadata.create_all(bind=engine)
+
+# Ожидание готовности Kafka
 def wait_for_kafka():
     consumer = None
-    while consumer is None:
+    while not consumer:
         try:
-            # Пробуем подключиться к Kafka
             consumer = KafkaConsumer(
                 TOPIC_NAME,
-                bootstrap_servers=[KAFKA_BROKER_URL],
-                value_deserializer=lambda v: json.loads(v.decode("utf-8"))
+                bootstrap_servers=KAFKA_BROKER_URL,
+                value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+                auto_offset_reset="earliest",
+                group_id="user_consumer_group"
             )
-            print("Connected to Kafka.")
+            print("Successfully connected to Kafka.")
         except Exception as e:
-            print(f"Kafka not ready, retrying... Error: {e}")
-            time.sleep(5)  # Ждем 5 секунд перед повторной попыткой
+            print(f"Waiting for Kafka... Error: {e}")
+            time.sleep(5)
     return consumer
 
-# Подключаемся к Kafka
+# Kafka Consumer
 consumer = wait_for_kafka()
 
-# Функция сохранения пользователя в базу данных PostgreSQL
-def save_user_to_db(user_data):
-    with SessionLocal() as db:
-        user = User(**user_data)
-        db.add(user)
-        db.commit()
+# Обработчик сообщений Kafka
+def process_message(message):
+    with SessionLocal() as session:
+        user = User(**message)
+        session.add(user)
+        session.commit()
+        print(f"User {user.username} saved to database.")
 
-# Чтение сообщений из Kafka и сохранение пользователей в базу данных
-for message in consumer:
-    save_user_to_db(message.value)
+# Основной цикл обработки сообщений
+print("Starting to consume messages...")
+for msg in consumer:
+    try:
+        process_message(msg.value)
+    except Exception as e:
+        print(f"Error processing message: {e}")
